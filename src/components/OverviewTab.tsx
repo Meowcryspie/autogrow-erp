@@ -6,14 +6,17 @@ import {
   FileText,
   ArrowUpRight,
   PackageCheck,
-  Building2
+  Building2,
+  Clock,
+  ChevronRight
 } from 'lucide-react';
 import type {
   ErpSalesOrder,
   InventoryItem,
   ErpPurchaseOrder,
   ErpInvoice,
-  ErpNavTab
+  ErpNavTab,
+  ErpActivityEvent
 } from '../types/erp';
 import { MONTHLY_CASHFLOW_SERIES } from '../data/mockErpData';
 
@@ -23,6 +26,7 @@ interface OverviewTabProps {
   inventory: InventoryItem[];
   purchaseOrders: ErpPurchaseOrder[];
   invoices: ErpInvoice[];
+  activities: ErpActivityEvent[];
   onNavigateTab: (tab: ErpNavTab) => void;
   onInspectOrder: (order: ErpSalesOrder) => void;
 }
@@ -33,12 +37,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   inventory,
   purchaseOrders,
   invoices,
+  activities,
   onNavigateTab,
   onInspectOrder
 }) => {
   const [selectedMonthIdx, setSelectedMonthIdx] = useState<number>(MONTHLY_CASHFLOW_SERIES.length - 1);
 
-  const openOrders = orders.filter((o) => o.status === 'PENDING' || o.status === 'ALLOCATED');
+  const pendingOrders = orders.filter((o) => o.status === 'PENDING');
+  const allocatedOrders = orders.filter((o) => o.status === 'ALLOCATED');
+  const shippedOrders = orders.filter((o) => o.status === 'DISPATCHED');
   const totalOrderValue = orders
     .filter((o) => o.status !== 'CANCELLED')
     .reduce((sum, o) => sum + o.totalAmount, 0);
@@ -57,9 +64,113 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
   const activeMonth = MONTHLY_CASHFLOW_SERIES[selectedMonthIdx] || MONTHLY_CASHFLOW_SERIES[MONTHLY_CASHFLOW_SERIES.length - 1];
   const maxRevenue = Math.max(...MONTHLY_CASHFLOW_SERIES.map((m) => m.revenue), 1);
+  const activeProfit = activeMonth.revenue - activeMonth.cogs;
+
+  const workflowSteps: {
+    step: string;
+    title: string;
+    countLabel: string;
+    hint: string;
+    highlight: boolean;
+    targetTab: ErpNavTab;
+  }[] = [
+    {
+      step: '1',
+      title: 'Incoming Orders',
+      countLabel: `${pendingOrders.length} Need Review`,
+      hint: 'Check stock & reserve items',
+      highlight: pendingOrders.length > 0,
+      targetTab: 'orders'
+    },
+    {
+      step: '2',
+      title: 'Pack & Ship',
+      countLabel: `${allocatedOrders.length} Ready to Ship`,
+      hint: 'Add tracking & ship parcel',
+      highlight: allocatedOrders.length > 0,
+      targetTab: 'orders'
+    },
+    {
+      step: '3',
+      title: 'Invoices & Payment',
+      countLabel: `${unpaidInvoices.length} Unpaid ($${unpaidTotal.toLocaleString()})`,
+      hint: 'Send invoice & mark paid',
+      highlight: unpaidInvoices.some((i) => i.status === 'OVERDUE'),
+      targetTab: 'finance'
+    },
+    {
+      step: '4',
+      title: 'Check Low Stock',
+      countLabel: `${lowStockItems.length} Running Low`,
+      hint: 'Restock low probes & pods',
+      highlight: lowStockItems.length > 0,
+      targetTab: 'inventory'
+    },
+    {
+      step: '5',
+      title: 'Supplier Deliveries',
+      countLabel: `${openPos.length} Incoming POs`,
+      hint: 'Receive stock into warehouse',
+      highlight: openPos.length > 0,
+      targetTab: 'procurement'
+    }
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* A-to-Z Guided Daily Operations Bar */}
+      <div
+        data-testid="erp-workflow-guide"
+        style={{
+          backgroundColor: '#FFFFFF',
+          border: '1px solid #CBD5E1',
+          borderRadius: '10px',
+          padding: '14px 18px'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>
+            Daily A-to-Z Operations Workflow — Click any step to jump straight in
+          </div>
+          <span style={{ fontSize: '11px', color: '#64748B' }}>
+            {shippedOrders.length} orders currently in transit to growers
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: '8px' }}>
+          {workflowSteps.map((ws) => (
+            <button
+              key={ws.step}
+              type="button"
+              onClick={() => onNavigateTab(ws.targetTab)}
+              style={{
+                textAlign: 'left',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: ws.highlight ? '1px solid #10B981' : '1px solid #E2E8F0',
+                backgroundColor: ws.highlight ? '#F0FDF4' : '#F8FAFC',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '3px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span style={{ fontSize: '10px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 6px', borderRadius: '4px' }}>
+                  STEP {ws.step}
+                </span>
+                <ChevronRight size={13} color="#64748B" />
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>{ws.title}</div>
+              <div style={{ fontSize: '11.5px', fontWeight: 700, color: ws.highlight ? '#059669' : '#475569', fontFamily: 'monospace' }}>
+                {ws.countLabel}
+              </div>
+              <div style={{ fontSize: '10.5px', color: '#64748B' }}>{ws.hint}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Top 4 Hairline Executive KPI Cells */}
       <div style={{
         backgroundColor: '#FFFFFF',
@@ -72,64 +183,64 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div style={{ padding: '16px 20px', borderRight: '1px solid #E2E8F0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
             <TrendingUp size={12} color="#10B981" />
-            <span>Active Order Book</span>
+            <span>Total Sales Orders</span>
           </div>
           <div data-testid="erp-kpi-order-book" style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A', marginTop: '4px' }}>
             ${totalOrderValue.toLocaleString()}
           </div>
           <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-            {orders.length} orders tracked across {entityName}
+            Across {orders.length} orders · {entityName}
           </div>
         </div>
 
         <div style={{ padding: '16px 20px', borderRight: '1px solid #E2E8F0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
             <ShoppingCart size={12} color="#2563EB" />
-            <span>Fulfillment Queue</span>
+            <span>To Pack & Ship</span>
           </div>
           <div style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A', marginTop: '4px' }}>
-            {openOrders.length} Open
+            {pendingOrders.length + allocatedOrders.length} Orders
           </div>
           <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-            Pending pick, bench QA, or dispatch allocation
+            {pendingOrders.length} awaiting check · {allocatedOrders.length} ready to ship
           </div>
         </div>
 
         <div style={{ padding: '16px 20px', borderRight: '1px solid #E2E8F0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
             <AlertTriangle size={12} color="#D97706" />
-            <span>Reorder Alerts</span>
+            <span>Low Stock Warnings</span>
           </div>
           <div style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'monospace', color: lowStockItems.length > 0 ? '#D97706' : '#10B981', marginTop: '4px' }}>
-            {lowStockItems.length} SKUs
+            {lowStockItems.length} Items
           </div>
           <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-            {openPos.length} inbound supplier POs in pipeline
+            {openPos.length} supplier restock shipments on the way
           </div>
         </div>
 
         <div style={{ padding: '16px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
             <FileText size={12} color="#0F172A" />
-            <span>Outstanding AR</span>
+            <span>Unpaid Customer Bills</span>
           </div>
           <div style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A', marginTop: '4px' }}>
             ${unpaidTotal.toLocaleString()}
           </div>
           <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-            {unpaidInvoices.length} unpaid / overdue customer invoices
+            {unpaidInvoices.length} open invoices awaiting customer payment
           </div>
         </div>
       </div>
 
-      {/* Asymmetric Split: Channel & Warehouse Health (1.1fr) | Revenue vs COGS + Action Queue (1.9fr) */}
+      {/* Asymmetric Split: Channel Mix & Low Stock Watch (1.05fr) | Sales & Fulfillment Queue (1.95fr) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(320px, 1.1fr) minmax(440px, 1.9fr)',
+        gridTemplateColumns: 'minmax(320px, 1.05fr) minmax(440px, 1.95fr)',
         gap: '16px',
         alignItems: 'stretch'
       }}>
-        {/* Left: Channel Mix & Hub Breakdown */}
+        {/* Left: Channel Mix & Warehouse Health */}
         <div style={{
           backgroundColor: '#FFFFFF',
           border: '1px solid #CBD5E1',
@@ -149,14 +260,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Building2 size={15} color="#0F172A" />
               <span style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
-                Order Intake by Channel
+                Where Orders Come From
               </span>
             </div>
             <button
               onClick={() => onNavigateTab('orders')}
               style={{ background: 'none', border: 'none', fontSize: '11px', fontWeight: 700, color: '#2563EB', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
             >
-              View Queue <ArrowUpRight size={12} />
+              Open Orders <ArrowUpRight size={12} />
             </button>
           </div>
 
@@ -173,7 +284,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#64748B', marginBottom: '5px' }}>
                     <span>{ch.count} orders</span>
-                    <span>{sharePct}% share</span>
+                    <span>{sharePct}% of sales</span>
                   </div>
                   <div style={{ width: '100%', height: '6px', backgroundColor: '#F1F5F9', borderRadius: '3px', overflow: 'hidden' }}>
                     <div style={{
@@ -191,18 +302,18 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div style={{ marginTop: 'auto', paddingTop: '14px', borderTop: '1px solid #E2E8F0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
-                  Warehouse Reorder Watch
+                  Items Running Low
                 </span>
                 <button
                   onClick={() => onNavigateTab('inventory')}
                   style={{ background: 'none', border: 'none', fontSize: '11px', fontWeight: 700, color: '#2563EB', cursor: 'pointer' }}
                 >
-                  Open Stock →
+                  Manage Stock →
                 </button>
               </div>
               {lowStockItems.length === 0 ? (
                 <div style={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
-                  All SKUs above safety reorder threshold.
+                  All hardware items have healthy warehouse stock.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -224,10 +335,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       >
                         <div>
                           <div style={{ fontWeight: 800, color: '#0F172A', fontFamily: 'monospace' }}>{item.sku}</div>
-                          <div style={{ color: '#92400E', fontSize: '10.5px' }}>{item.warehouseBin} · Min {item.reorderPoint}</div>
+                          <div style={{ color: '#92400E', fontSize: '10.5px' }}>Min threshold: {item.reorderPoint} units</div>
                         </div>
                         <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#B45309' }}>
-                          {available} avail
+                          {available} left
                         </span>
                       </div>
                     );
@@ -238,9 +349,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* Right: Monthly Cashflow & Active Fulfillment Action Table */}
+        {/* Right: Monthly Sales & Profit + Orders Needing Action */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Monthly Cashflow Analytics */}
           <div style={{
             backgroundColor: '#FFFFFF',
             border: '1px solid #CBD5E1',
@@ -250,31 +360,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
               <div>
                 <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>
-                  6-Month Revenue vs. COGS Summary ({activeMonth.month} 2026)
+                  Monthly Sales & Gross Profit ({activeMonth.month} 2026)
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748B' }}>
-                  Click any month column to inspect gross margin & order count
+                  Click any month bar to inspect sales, hardware cost, and profit margin
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '14px', fontFamily: 'monospace', fontSize: '11.5px' }}>
                 <div>
-                  <span style={{ color: '#64748B' }}>Rev: </span>
+                  <span style={{ color: '#64748B' }}>Sales: </span>
                   <strong style={{ color: '#059669' }}>${activeMonth.revenue.toLocaleString()}</strong>
                 </div>
                 <div>
-                  <span style={{ color: '#64748B' }}>COGS: </span>
+                  <span style={{ color: '#64748B' }}>Cost: </span>
                   <strong style={{ color: '#0F172A' }}>${activeMonth.cogs.toLocaleString()}</strong>
                 </div>
                 <div>
-                  <span style={{ color: '#64748B' }}>Margin: </span>
+                  <span style={{ color: '#64748B' }}>Profit: </span>
                   <strong style={{ color: '#2563EB' }}>
-                    {Math.round(((activeMonth.revenue - activeMonth.cogs) / activeMonth.revenue) * 100)}%
+                    ${activeProfit.toLocaleString()} ({Math.round((activeProfit / activeMonth.revenue) * 100)}%)
                   </strong>
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px', alignItems: 'flex-end', height: '120px', paddingTop: '10px', borderBottom: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px', alignItems: 'flex-end', height: '110px', paddingTop: '10px', borderBottom: '1px solid #E2E8F0' }}>
               {MONTHLY_CASHFLOW_SERIES.map((m, idx) => {
                 const revH = Math.max(18, Math.round((m.revenue / maxRevenue) * 100));
                 const cogsH = Math.max(10, Math.round((m.cogs / maxRevenue) * 100));
@@ -297,7 +407,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       cursor: 'pointer'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '84px', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '78px', width: '100%' }}>
                       <div style={{ flex: 1, height: `${revH}%`, backgroundColor: isSelected ? '#10B981' : '#34D399', borderRadius: '3px 3px 0 0' }} />
                       <div style={{ flex: 1, height: `${cogsH}%`, backgroundColor: '#0F172A', borderRadius: '3px 3px 0 0', opacity: isSelected ? 1 : 0.7 }} />
                     </div>
@@ -314,98 +424,88 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </div>
 
-          {/* Pending & Allocated Orders Ready for Action */}
-          <div style={{
-            backgroundColor: '#FFFFFF',
-            border: '1px solid #CBD5E1',
-            borderRadius: '10px',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '12px 16px',
-              borderBottom: '1px solid #E2E8F0',
-              backgroundColor: '#F8FAFC',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <PackageCheck size={15} color="#0F172A" />
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
-                  Orders Awaiting ERP Action
-                </span>
-              </div>
-              <span style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#64748B' }}>
-                Click an order to allocate or dispatch
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {openOrders.length === 0 ? (
-                <div style={{ padding: '18px', fontSize: '12px', color: '#64748B', textAlign: 'center' }}>
-                  All active orders have been dispatched.
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1.3fr) minmax(240px, 1fr)', gap: '16px' }}>
+            {/* Actionable Orders Queue */}
+            <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '10px', overflow: 'hidden' }}>
+              <div style={{ padding: '11px 14px', borderBottom: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                  <PackageCheck size={14} color="#0F172A" />
+                  <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>Orders Waiting for Action</span>
                 </div>
-              ) : (
-                openOrders.map((ord, idx) => (
-                  <button
-                    key={ord.id}
-                    type="button"
-                    onClick={() => onInspectOrder(ord)}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '11px 16px',
-                      border: 'none',
-                      borderTop: idx > 0 ? '1px solid #F1F5F9' : 'none',
-                      backgroundColor: '#FFFFFF',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '12px'
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A' }}>
-                          {ord.orderNumber}
-                        </span>
+                <span style={{ fontSize: '10.5px', color: '#64748B' }}>Click to process</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {pendingOrders.length + allocatedOrders.length === 0 ? (
+                  <div style={{ padding: '18px', fontSize: '12px', color: '#64748B', textAlign: 'center' }}>
+                    All active orders have been shipped.
+                  </div>
+                ) : (
+                  [...pendingOrders, ...allocatedOrders].map((ord, idx) => (
+                    <button
+                      key={ord.id}
+                      type="button"
+                      onClick={() => onInspectOrder(ord)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '10px 14px',
+                        border: 'none',
+                        borderTop: idx > 0 ? '1px solid #F1F5F9' : 'none',
+                        backgroundColor: '#FFFFFF',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '10px'
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A' }}>{ord.orderNumber}</span>
+                          <span style={{ fontSize: '9.5px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', backgroundColor: ord.source === 'Web Store' ? '#ECFDF5' : '#EFF6FF', color: ord.source === 'Web Store' ? '#065F46' : '#1E40AF' }}>
+                            {ord.source}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {ord.companyName}
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A' }}>${ord.totalAmount.toLocaleString()}</div>
                         <span style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
+                          fontSize: '9.5px',
+                          fontWeight: 800,
+                          fontFamily: 'monospace',
                           padding: '1px 6px',
                           borderRadius: '4px',
-                          backgroundColor: ord.source === 'Web Store' ? '#ECFDF5' : '#EFF6FF',
-                          color: ord.source === 'Web Store' ? '#065F46' : '#1E40AF',
-                          border: '1px solid #CBD5E1'
+                          backgroundColor: ord.status === 'PENDING' ? '#FEF3C7' : '#DBEAFE',
+                          color: ord.status === 'PENDING' ? '#B45309' : '#1D4ED8'
                         }}>
-                          {ord.source}
+                          {ord.status === 'PENDING' ? '1. NEW ORDER' : '2. READY TO SHIP'}
                         </span>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                        {ord.companyName} · {ord.lines.length} line items · Ship by {ord.expectedShipDate}
-                      </div>
-                    </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'monospace', color: '#0F172A' }}>
-                        ${ord.totalAmount.toLocaleString()}
-                      </span>
-                      <span style={{
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        fontFamily: 'monospace',
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: ord.status === 'PENDING' ? '#FEF3C7' : '#DBEAFE',
-                        color: ord.status === 'PENDING' ? '#B45309' : '#1D4ED8'
-                      }}>
-                        {ord.status}
-                      </span>
-                    </div>
-                  </button>
-                ))
-              )}
+            {/* Recent Activity Timeline */}
+            <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '10px', overflow: 'hidden' }}>
+              <div style={{ padding: '11px 14px', borderBottom: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <Clock size={14} color="#0F172A" />
+                <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>Recent ERP Activity</span>
+              </div>
+              <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '210px', overflowY: 'auto' }}>
+                {activities.slice(0, 6).map((act) => (
+                  <div key={act.id} style={{ borderLeft: '2px solid #CBD5E1', paddingLeft: '10px' }}>
+                    <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#64748B' }}>{act.timestamp}</div>
+                    <div style={{ fontSize: '11.5px', color: '#0F172A', lineHeight: 1.4 }}>{act.message}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

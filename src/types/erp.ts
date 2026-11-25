@@ -1,4 +1,4 @@
-export type ErpNavTab = 'overview' | 'orders' | 'inventory' | 'procurement' | 'finance';
+export type ErpNavTab = 'overview' | 'orders' | 'inventory' | 'procurement' | 'finance' | 'customers';
 
 export type BusinessEntityId = 'ALL' | 'NZ-HQ' | 'MY-OPS';
 
@@ -33,6 +33,8 @@ export interface ErpSalesOrder {
   status: ErpOrderStatus;
   createdAt: string;
   expectedShipDate: string;
+  carrier?: string;
+  trackingNumber?: string;
   lines: ErpOrderLine[];
   totalAmount: number;
   notes?: string;
@@ -83,8 +85,33 @@ export interface ErpInvoice {
   orderNumber: string;
   entityId: Exclude<BusinessEntityId, 'ALL'>;
   customerCompany: string;
+  customerEmail?: string;
+  billingAddress?: string;
   issuedDate: string;
   dueDate: string;
+  paidDate?: string;
+  paymentMethod?: 'Bank Wire' | 'Credit Card' | 'Commercial Net-14';
+  lines?: ErpOrderLine[];
   amount: number;
   status: InvoiceStatus;
+}
+
+export interface ErpCustomer {
+  id: string;
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  region: string;
+  shippingAddress: string;
+  preferredEntity: Exclude<BusinessEntityId, 'ALL'>;
+  voltageSpec: ErpSalesOrder['voltageSpec'];
+  accountTier: 'Commercial Grower' | 'Enterprise Multi-Site' | 'Authorized Distributor';
+}
+
+export interface ErpActivityEvent {
+  id: string;
+  timestamp: string;
+  category: 'order' | 'inventory' | 'procurement' | 'finance';
+  message: string;
 }

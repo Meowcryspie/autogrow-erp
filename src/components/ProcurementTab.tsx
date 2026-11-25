@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Truck, CheckCircle2, Plus, X } from 'lucide-react';
+import { Truck, CheckCircle2, Plus, X, ArrowRight } from 'lucide-react';
 import type { ErpPurchaseOrder, InventoryItem, BusinessEntityId } from '../types/erp';
 
 interface ProcurementTabProps {
   purchaseOrders: ErpPurchaseOrder[];
   inventory: InventoryItem[];
+  onMarkInTransit: (poId: string) => void;
   onReceivePo: (poId: string) => void;
   onCreatePo: (po: Omit<ErpPurchaseOrder, 'id' | 'poNumber' | 'createdAt'>) => void;
 }
@@ -12,6 +13,7 @@ interface ProcurementTabProps {
 export const ProcurementTab: React.FC<ProcurementTabProps> = ({
   purchaseOrders,
   inventory,
+  onMarkInTransit,
   onReceivePo,
   onCreatePo
 }) => {
@@ -54,10 +56,10 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
           <Truck size={18} color="#0F172A" />
           <div>
             <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
-              Procurement & Supplier Purchase Orders
+              Supplier Purchase Orders (Restocking)
             </h2>
             <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#64748B' }}>
-              Track inbound hardware components from PCB assembly & probe manufacturers. Receiving goods automatically replenishes stock.
+              Track incoming hardware shipments from suppliers. Clicking <strong>Receive into Stock</strong> updates your warehouse counts automatically.
             </p>
           </div>
         </div>
@@ -80,7 +82,7 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
           }}
         >
           <Plus size={14} color="#34D399" />
-          <span>New Purchase Order</span>
+          <span>New Supplier Order</span>
         </button>
       </div>
 
@@ -89,13 +91,13 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '10.5px', textTransform: 'uppercase' }}>
-                <th style={{ padding: '11px 16px' }}>PO Number</th>
+                <th style={{ padding: '11px 16px' }}>PO #</th>
                 <th style={{ padding: '11px 14px' }}>Supplier</th>
-                <th style={{ padding: '11px 14px' }}>Inbound Items</th>
-                <th style={{ padding: '11px 14px' }}>Expected ETA</th>
-                <th style={{ padding: '11px 14px' }}>Status</th>
+                <th style={{ padding: '11px 14px' }}>Hardware Ordered</th>
+                <th style={{ padding: '11px 14px' }}>Estimated Arrival</th>
+                <th style={{ padding: '11px 14px' }}>Stage</th>
                 <th style={{ padding: '11px 14px', textAlign: 'right' }}>Total Cost</th>
-                <th style={{ padding: '11px 16px', textAlign: 'right' }}>Receiving</th>
+                <th style={{ padding: '11px 16px', textAlign: 'right' }}>Next Step</th>
               </tr>
             </thead>
             <tbody>
@@ -121,38 +123,62 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
                       color: po.status === 'RECEIVED' ? '#065F46' : po.status === 'IN_TRANSIT' ? '#1D4ED8' : '#B45309',
                       border: '1px solid #CBD5E1'
                     }}>
-                      {po.status}
+                      {po.status === 'IN_TRANSIT' ? 'ON THE WAY' : po.status}
                     </span>
                   </td>
                   <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>
                     ${po.totalCost.toLocaleString()}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                    {po.status !== 'RECEIVED' ? (
-                      <button
-                        type="button"
-                        data-testid={`erp-receive-po-${po.id}`}
-                        onClick={() => onReceivePo(po.id)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          padding: '5px 10px',
-                          backgroundColor: '#10B981',
-                          color: '#FFFFFF',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <CheckCircle2 size={12} />
-                        <span>Receive Goods</span>
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: '11px', color: '#64748B', fontFamily: 'monospace' }}>Stocked</span>
-                    )}
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      {po.status === 'ORDERED' && (
+                        <button
+                          type="button"
+                          onClick={() => onMarkInTransit(po.id)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '5px 9px',
+                            backgroundColor: '#EFF6FF',
+                            color: '#1D4ED8',
+                            border: '1px solid #BFDBFE',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <span>Mark Shipped</span>
+                          <ArrowRight size={11} />
+                        </button>
+                      )}
+                      {po.status !== 'RECEIVED' ? (
+                        <button
+                          type="button"
+                          data-testid={`erp-receive-po-${po.id}`}
+                          onClick={() => onReceivePo(po.id)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '5px 10px',
+                            backgroundColor: '#10B981',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <CheckCircle2 size={12} />
+                          <span>Receive into Stock</span>
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#059669', fontFamily: 'monospace', fontWeight: 700 }}>Stock Added</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -173,16 +199,16 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
           zIndex: 120,
           padding: '20px'
         }}>
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', maxWidth: '420px', width: '100%', border: '1px solid #CBD5E1', overflow: 'hidden' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', maxWidth: '430px', width: '100%', border: '1px solid #CBD5E1', overflow: 'hidden' }}>
             <div style={{ padding: '14px 18px', backgroundColor: '#0F172A', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '14px', fontWeight: 800 }}>Issue Supplier Purchase Order</span>
+              <span style={{ fontSize: '14px', fontWeight: 800 }}>Order Hardware From Supplier</span>
               <button type="button" onClick={() => setIsNewPoOpen(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
                 <X size={16} />
               </button>
             </div>
             <form onSubmit={handleSubmitPo} style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px' }}>
               <div>
-                <label style={{ display: 'block', fontWeight: 700, marginBottom: '4px' }}>SKU to Replenish</label>
+                <label style={{ display: 'block', fontWeight: 700, marginBottom: '4px' }}>Select Hardware SKU</label>
                 <select value={selectedSku} onChange={(e) => setSelectedSku(e.target.value)} style={{ width: '100%', padding: '8px', border: '1px solid #CBD5E1', borderRadius: '6px', backgroundColor: '#FFFFFF' }}>
                   {inventory.map((i) => (
                     <option key={i.sku} value={i.sku}>{i.sku} — {i.supplierName} (${i.unitCost}/unit)</option>
@@ -195,7 +221,7 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
                   <input type="number" min={1} max={500} value={qty} onChange={(e) => setQty(Number(e.target.value))} style={{ width: '100%', padding: '8px 10px', border: '1px solid #CBD5E1', borderRadius: '6px' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '4px' }}>Receiving Hub</label>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '4px' }}>Deliver To Warehouse</label>
                   <select value={entityId} onChange={(e) => setEntityId(e.target.value as any)} style={{ width: '100%', padding: '8px', border: '1px solid #CBD5E1', borderRadius: '6px', backgroundColor: '#FFFFFF' }}>
                     <option value="NZ-HQ">NZ-HQ (AKL)</option>
                     <option value="MY-OPS">MY-OPS (KUL)</option>
@@ -204,7 +230,7 @@ export const ProcurementTab: React.FC<ProcurementTabProps> = ({
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
                 <button type="button" onClick={() => setIsNewPoOpen(false)} style={{ padding: '7px 12px', backgroundColor: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '6px', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '7px 14px', backgroundColor: '#10B981', color: '#FFFFFF', border: 'none', borderRadius: '6px', fontWeight: 800, cursor: 'pointer' }}>Issue Purchase Order</button>
+                <button type="submit" style={{ padding: '7px 14px', backgroundColor: '#10B981', color: '#FFFFFF', border: 'none', borderRadius: '6px', fontWeight: 800, cursor: 'pointer' }}>Create PO</button>
               </div>
             </form>
           </div>

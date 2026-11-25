@@ -3,16 +3,18 @@ import type {
   ErpSalesOrder,
   InventoryItem,
   ErpPurchaseOrder,
-  ErpInvoice
+  ErpInvoice,
+  ErpCustomer,
+  ErpActivityEvent
 } from '../types/erp';
 
 export const BUSINESS_ENTITIES: BusinessEntity[] = [
   {
     id: 'ALL',
-    name: 'Autogrow Global Consolidated',
-    region: 'NZ Manufacturing + MY Distribution',
+    name: 'Autogrow Global Operations',
+    region: 'All Warehouses (New Zealand & Asia-Pacific)',
     currency: 'USD',
-    warehouseCode: 'ALL-WH'
+    warehouseCode: 'ALL-HUBS'
   },
   {
     id: 'NZ-HQ',
@@ -23,10 +25,73 @@ export const BUSINESS_ENTITIES: BusinessEntity[] = [
   },
   {
     id: 'MY-OPS',
-    name: 'Autogrow Asia-Pacific Fulfillment',
-    region: 'Kuala Lumpur & Cameron Highlands Hub',
+    name: 'Autogrow Asia-Pacific Hub',
+    region: 'Kuala Lumpur & Cameron Highlands Fulfillment',
     currency: 'USD',
     warehouseCode: 'KUL-HUB-02'
+  }
+];
+
+export const INITIAL_CUSTOMERS: ErpCustomer[] = [
+  {
+    id: 'cust-1',
+    companyName: 'Highlands Commercial Glasshouses Sdn Bhd',
+    contactName: 'Amirul Hakim',
+    email: 'ops@highlandsglasshouse.my',
+    phone: '+60 5-491 8820',
+    region: 'Cameron Highlands, Pahang',
+    shippingAddress: 'Lot 48 Tanah Rata Ridge, Cameron Highlands, 39000 Pahang',
+    preferredEntity: 'MY-OPS',
+    voltageSpec: '240VAC 50Hz',
+    accountTier: 'Enterprise Multi-Site'
+  },
+  {
+    id: 'cust-2',
+    companyName: 'Waikato Vine & Berry Growers Ltd',
+    contactName: 'Callum McKenzie',
+    email: 'procurement@waikatogrowers.co.nz',
+    phone: '+64 7-850 4412',
+    region: 'Hamilton, New Zealand',
+    shippingAddress: '112 Hydroponic Way, Hamilton 3204, New Zealand',
+    preferredEntity: 'NZ-HQ',
+    voltageSpec: '240VAC 50Hz',
+    accountTier: 'Commercial Grower'
+  },
+  {
+    id: 'cust-3',
+    companyName: 'Kundasang Alpine Nursery',
+    contactName: 'Nurul Ain Razak',
+    email: 'nursery@kinabalugreens.my',
+    phone: '+60 88-889 310',
+    region: 'Mount Kinabalu, Sabah',
+    shippingAddress: 'KM 8 Jalan Kundasang-Ranau, 89308 Sabah',
+    preferredEntity: 'MY-OPS',
+    voltageSpec: '240VAC 50Hz',
+    accountTier: 'Commercial Grower'
+  },
+  {
+    id: 'cust-4',
+    companyName: 'Pacific Hydroponic Supply Co.',
+    contactName: 'Elena Vance',
+    email: 'orders@pacifichydro.com',
+    phone: '+64 7-578 9020',
+    region: 'Tauranga, New Zealand',
+    shippingAddress: '450 Harbor Blvd, Tauranga 3110, New Zealand',
+    preferredEntity: 'NZ-HQ',
+    voltageSpec: '110VAC 60Hz',
+    accountTier: 'Authorized Distributor'
+  },
+  {
+    id: 'cust-5',
+    companyName: 'Southern Cross Glasshouses Ltd',
+    contactName: 'Gareth Reid',
+    email: 'finance@southerncross.co.nz',
+    phone: '+64 3-348 1190',
+    region: 'Christchurch, New Zealand',
+    shippingAddress: '84 Canterbury Plains Rd, Christchurch 8042, New Zealand',
+    preferredEntity: 'NZ-HQ',
+    voltageSpec: '240VAC 50Hz',
+    accountTier: 'Enterprise Multi-Site'
   }
 ];
 
@@ -219,12 +284,14 @@ export const INITIAL_ORDERS: ErpSalesOrder[] = [
     status: 'DISPATCHED',
     createdAt: '2026-11-20',
     expectedShipDate: '2026-11-22',
+    carrier: 'DHL Air Express',
+    trackingNumber: 'MY-88492011',
     lines: [
       { sku: 'WCS-PROBE-316L', name: 'WCS-Pro Multi-Depth Substrate Moisture/EC Probe', qty: 6, unitPrice: 420 },
       { sku: 'PH-SENSE-PLUS', name: 'pH Sense Plus Industrial Glass Body Probe', qty: 4, unitPrice: 285 }
     ],
     totalAmount: 3660,
-    notes: 'DHL Air Express tracking #MY-88492011.'
+    notes: 'Shipped from Kuala Lumpur hub via air freight.'
   },
   {
     id: 'ord-1045',
@@ -239,12 +306,14 @@ export const INITIAL_ORDERS: ErpSalesOrder[] = [
     status: 'COMPLETED',
     createdAt: '2026-11-12',
     expectedShipDate: '2026-11-15',
+    carrier: 'Mainfreight NZ',
+    trackingNumber: 'MF-3304921',
     lines: [
       { sku: 'ICC-2', name: 'IntelliClimate CEA Environmental Controller', qty: 4, unitPrice: 1490 },
       { sku: 'PUMP-HEAD-8X', name: 'IntelliDose Peristaltic Pump Head Replacement Kit', qty: 10, unitPrice: 195 }
     ],
     totalAmount: 7910,
-    notes: 'Quarterly distributor restock completed and settled.'
+    notes: 'Quarterly distributor restock delivered and paid.'
   }
 ];
 
@@ -298,8 +367,16 @@ export const INITIAL_INVOICES: ErpInvoice[] = [
     orderNumber: 'AG-DST-2026-1045',
     entityId: 'NZ-HQ',
     customerCompany: 'Pacific Hydroponic Supply Co.',
+    customerEmail: 'orders@pacifichydro.com',
+    billingAddress: '450 Harbor Blvd, Tauranga 3110, New Zealand',
     issuedDate: '2026-11-15',
     dueDate: '2026-11-30',
+    paidDate: '2026-11-18',
+    paymentMethod: 'Bank Wire',
+    lines: [
+      { sku: 'ICC-2', name: 'IntelliClimate CEA Environmental Controller', qty: 4, unitPrice: 1490 },
+      { sku: 'PUMP-HEAD-8X', name: 'IntelliDose Peristaltic Pump Head Replacement Kit', qty: 10, unitPrice: 195 }
+    ],
     amount: 7910,
     status: 'PAID'
   },
@@ -309,8 +386,14 @@ export const INITIAL_INVOICES: ErpInvoice[] = [
     orderNumber: 'AG-WEB-2026-1046',
     entityId: 'MY-OPS',
     customerCompany: 'Kundasang Alpine Nursery',
+    customerEmail: 'nursery@kinabalugreens.my',
+    billingAddress: 'KM 8 Jalan Kundasang-Ranau, 89308 Sabah',
     issuedDate: '2026-11-22',
     dueDate: '2026-12-06',
+    lines: [
+      { sku: 'WCS-PROBE-316L', name: 'WCS-Pro Multi-Depth Substrate Moisture/EC Probe', qty: 6, unitPrice: 420 },
+      { sku: 'PH-SENSE-PLUS', name: 'pH Sense Plus Industrial Glass Body Probe', qty: 4, unitPrice: 285 }
+    ],
     amount: 3660,
     status: 'UNPAID'
   },
@@ -320,10 +403,44 @@ export const INITIAL_INVOICES: ErpInvoice[] = [
     orderNumber: 'AG-B2B-2026-1039',
     entityId: 'NZ-HQ',
     customerCompany: 'Southern Cross Glasshouses Ltd',
+    customerEmail: 'finance@southerncross.co.nz',
+    billingAddress: '84 Canterbury Plains Rd, Christchurch 8042, New Zealand',
     issuedDate: '2026-10-20',
     dueDate: '2026-11-19',
+    lines: [
+      { sku: 'MGC-Pro', name: 'MultiGrow Commercial Master Controller (16-Ch)', qty: 3, unitPrice: 2950 },
+      { sku: 'EC-SENSE-PLUS', name: 'EC Sense Plus Toroidal Conductivity Sensor', qty: 5, unitPrice: 340 },
+      { sku: 'PH-SENSE-PLUS', name: 'pH Sense Plus Industrial Glass Body Probe', qty: 3, unitPrice: 290 }
+    ],
     amount: 11420,
     status: 'OVERDUE'
+  }
+];
+
+export const INITIAL_ACTIVITIES: ErpActivityEvent[] = [
+  {
+    id: 'act-1',
+    timestamp: 'Today · 14:20',
+    category: 'order',
+    message: 'New Web Store order AG-WEB-2026-1048 ($6,170) arrived from Highlands Commercial Glasshouses.'
+  },
+  {
+    id: 'act-2',
+    timestamp: 'Nov 23 · 11:05',
+    category: 'inventory',
+    message: 'Reserved stock for Waikato Vine & Berry Growers (AG-B2B-2026-1047) at AKL-HUB-01.'
+  },
+  {
+    id: 'act-3',
+    timestamp: 'Nov 22 · 16:45',
+    category: 'finance',
+    message: 'Shipped AG-WEB-2026-1046 via DHL Air Express & issued invoice INV-2026-0902 ($3,660).'
+  },
+  {
+    id: 'act-4',
+    timestamp: 'Nov 18 · 09:30',
+    category: 'procurement',
+    message: 'Supplier PO-2026-0408 ($22,200) placed with Auckland PCB Assembly Ltd.'
   }
 ];
 

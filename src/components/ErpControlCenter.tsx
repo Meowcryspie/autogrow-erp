@@ -5,13 +5,15 @@ import {
   Package,
   Truck,
   FileText,
+  Users,
   Search,
   Bell,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
   Check,
-  RotateCcw
+  RotateCcw,
+  X
 } from 'lucide-react';
 import type {
   ErpNavTab,
@@ -20,28 +22,34 @@ import type {
   ErpOrderStatus,
   InventoryItem,
   ErpPurchaseOrder,
-  ErpInvoice
+  ErpInvoice,
+  ErpCustomer,
+  ErpActivityEvent
 } from '../types/erp';
 import {
   BUSINESS_ENTITIES,
   INITIAL_ORDERS,
   INITIAL_INVENTORY,
   INITIAL_PURCHASE_ORDERS,
-  INITIAL_INVOICES
+  INITIAL_INVOICES,
+  INITIAL_CUSTOMERS,
+  INITIAL_ACTIVITIES
 } from '../data/mockErpData';
 import { OverviewTab } from './OverviewTab';
 import { OrdersTab } from './OrdersTab';
 import { InventoryTab } from './InventoryTab';
 import { ProcurementTab } from './ProcurementTab';
 import { FinanceTab } from './FinanceTab';
+import { CustomersTab } from './CustomersTab';
 
-const STORAGE_KEY = 'autogrow_erp_ledger_v1';
+const STORAGE_KEY = 'autogrow_erp_ledger_v2';
 
 interface PersistedLedger {
   orders: ErpSalesOrder[];
   inventory: InventoryItem[];
   purchaseOrders: ErpPurchaseOrder[];
   invoices: ErpInvoice[];
+  activities: ErpActivityEvent[];
 }
 
 function loadLedger(): PersistedLedger {
@@ -50,17 +58,24 @@ function loadLedger(): PersistedLedger {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.orders) && Array.isArray(parsed.inventory)) {
-        return parsed;
+        return {
+          orders: parsed.orders,
+          inventory: parsed.inventory,
+          purchaseOrders: parsed.purchaseOrders || INITIAL_PURCHASE_ORDERS,
+          invoices: parsed.invoices || INITIAL_INVOICES,
+          activities: parsed.activities || INITIAL_ACTIVITIES
+        };
       }
     }
   } catch {
-    // ignore corrupted local storage
+    // ignore storage parse failure
   }
   return {
     orders: INITIAL_ORDERS,
     inventory: INITIAL_INVENTORY,
     purchaseOrders: INITIAL_PURCHASE_ORDERS,
-    invoices: INITIAL_INVOICES
+    invoices: INITIAL_INVOICES,
+    activities: INITIAL_ACTIVITIES
   };
 }
 
@@ -69,6 +84,7 @@ export const ErpControlCenter: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [entityId, setEntityId] = useState<BusinessEntityId>('ALL');
   const [isEntityMenuOpen, setIsEntityMenuOpen] = useState<boolean>(false);
+  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toast, setToast] = useState<string | null>(null);
 
@@ -77,25 +93,33 @@ export const ErpControlCenter: React.FC = () => {
   const [inventory, setInventory] = useState<InventoryItem[]>(initial.inventory);
   const [purchaseOrders, setPurchaseOrders] = useState<ErpPurchaseOrder[]>(initial.purchaseOrders);
   const [invoices, setInvoices] = useState<ErpInvoice[]>(initial.invoices);
+  const [activities, setActivities] = useState<ErpActivityEvent[]>(initial.activities);
+
   const [selectedOrder, setSelectedOrder] = useState<ErpSalesOrder | null>(null);
+  const [prefilledCustomer, setPrefilledCustomer] = useState<ErpCustomer | null>(null);
+  const [focusedInvoiceOrderNum, setFocusedInvoiceOrderNum] = useState<string | null>(null);
 
   const entityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const alertsDropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ orders, inventory, purchaseOrders, invoices })
+        JSON.stringify({ orders, inventory, purchaseOrders, invoices, activities })
       );
     } catch {
-      // ignore quota limits
+      // ignore quota
     }
-  }, [orders, inventory, purchaseOrders, invoices]);
+  }, [orders, inventory, purchaseOrders, invoices, activities]);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
       if (entityDropdownRef.current && !entityDropdownRef.current.contains(e.target as Node)) {
         setIsEntityMenuOpen(false);
+      }
+      if (alertsDropdownRef.current && !alertsDropdownRef.current.contains(e.target as Node)) {
+        setIsAlertsOpen(false);
       }
     };
     document.addEventListener('mousedown', handleOutside);
@@ -104,12 +128,21 @@ export const ErpControlCenter: React.FC = () => {
 
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+    setTimeout(() => setToast(null), 2800);
+  };
+
+  const logActivity = (category: ErpActivityEvent['category'], message: string) => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    setActivities((prev) => [
+      { id: `act-${Date.now()}`, timestamp: `Just now · ${hh}:${mm}`, category, message },
+      ...prev
+    ]);
   };
 
   const currentEntity = BUSINESS_ENTITIES.find((e) => e.id === entityId) || BUSINESS_ENTITIES[0];
 
-  // Scope records by active business entity & search query
   const q = searchQuery.trim().toLowerCase();
   const scopedOrders = orders.filter(
     (o) =>
@@ -134,17 +167,83 @@ export const ErpControlCenter: React.FC = () => {
       (entityId === 'ALL' || inv.entityId === entityId) &&
       (!q || inv.invoiceNumber.toLowerCase().includes(q) || inv.customerCompany.toLowerCase().includes(q))
   );
+  const scopedCustomers = INITIAL_CUSTOMERS.filter(
+    (c) =>
+      (entityId === 'ALL' || c.preferredEntity === entityId) &&
+      (!q || c.companyName.toLowerCase().includes(q) || c.contactName.toLowerCase().includes(q) || c.region.toLowerCase().includes(q))
+  );
 
-  const lowStockCount = scopedInventory.filter((i) => i.onHand - i.reserved <= i.reorderPoint).length;
+  // Actionable Alert Items for Bell Notification Center
+  const alertItems = [
+    ...scopedOrders
+      .filter((o) => o.status === 'PENDING')
+      .map((o) => ({
+        id: `alert-ord-${o.id}`,
+        title: `New ${o.source}: ${o.orderNumber}`,
+        detail: `${o.companyName} ($${o.totalAmount.toLocaleString()}) awaits stock check`,
+        action: () => {
+          setSelectedOrder(o);
+          setNavTab('orders');
+          setIsAlertsOpen(false);
+        }
+      })),
+    ...scopedInventory
+      .filter((i) => i.onHand - i.reserved <= i.reorderPoint)
+      .map((i) => ({
+        id: `alert-inv-${i.sku}`,
+        title: `Low Stock: ${i.sku}`,
+        detail: `Only ${i.onHand - i.reserved} ready to sell (Min ${i.reorderPoint})`,
+        action: () => {
+          setNavTab('inventory');
+          setIsAlertsOpen(false);
+        }
+      })),
+    ...scopedInvoices
+      .filter((inv) => inv.status === 'OVERDUE')
+      .map((inv) => ({
+        id: `alert-inv-${inv.id}`,
+        title: `Overdue Invoice: ${inv.invoiceNumber}`,
+        detail: `${inv.customerCompany} owes $${inv.amount.toLocaleString()}`,
+        action: () => {
+          setFocusedInvoiceOrderNum(inv.orderNumber);
+          setNavTab('finance');
+          setIsAlertsOpen(false);
+        }
+      }))
+  ];
 
-  // Order Lifecycle Handlers (syncs inventory + invoices cleanly)
-  const handleAdvanceOrderStatus = (orderId: string, nextStatus: ErpOrderStatus) => {
+  // Order Lifecycle Handlers
+  const handleAdvanceOrderStatus = (
+    orderId: string,
+    nextStatus: ErpOrderStatus,
+    shippingInfo?: { carrier: string; trackingNumber: string }
+  ) => {
     const target = orders.find((o) => o.id === orderId);
     if (!target) return;
 
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: nextStatus,
+              carrier: shippingInfo?.carrier || o.carrier,
+              trackingNumber: shippingInfo?.trackingNumber || o.trackingNumber
+            }
+          : o
+      )
+    );
     if (selectedOrder?.id === orderId) {
-      setSelectedOrder((prev) => (prev ? { ...prev, status: nextStatus } : null));
+      setSelectedOrder((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: nextStatus,
+              carrier: shippingInfo?.carrier || prev.carrier,
+              trackingNumber: shippingInfo?.trackingNumber || prev.trackingNumber
+            }
+          : null
+      );
     }
 
     if (nextStatus === 'ALLOCATED' && target.status === 'PENDING') {
@@ -154,7 +253,8 @@ export const ErpControlCenter: React.FC = () => {
           return line ? { ...item, reserved: item.reserved + line.qty } : item;
         })
       );
-      showToast(`${target.orderNumber} allocated & stock reserved`);
+      logActivity('inventory', `Reserved stock for ${target.orderNumber} (${target.companyName}).`);
+      showToast(`${target.orderNumber} reserved — ready to pack & ship`);
     } else if (nextStatus === 'DISPATCHED' && target.status === 'ALLOCATED') {
       setInventory((prev) =>
         prev.map((item) => {
@@ -177,13 +277,17 @@ export const ErpControlCenter: React.FC = () => {
           orderNumber: target.orderNumber,
           entityId: target.entityId,
           customerCompany: target.companyName,
+          customerEmail: target.customerEmail,
+          billingAddress: target.shippingAddress,
           issuedDate: new Date().toISOString().split('T')[0],
           dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+          lines: target.lines,
           amount: target.totalAmount,
           status: 'UNPAID'
         };
         setInvoices((prev) => [newInv, ...prev]);
-        showToast(`${target.orderNumber} dispatched & ${invNum} issued`);
+        logActivity('finance', `Shipped ${target.orderNumber} via ${shippingInfo?.carrier || 'Carrier'} and issued ${invNum} ($${target.totalAmount.toLocaleString()}).`);
+        showToast(`${target.orderNumber} shipped & ${invNum} created`);
       }
     } else if (nextStatus === 'CANCELLED' && target.status === 'ALLOCATED') {
       setInventory((prev) =>
@@ -192,9 +296,11 @@ export const ErpControlCenter: React.FC = () => {
           return line ? { ...item, reserved: Math.max(0, item.reserved - line.qty) } : item;
         })
       );
-      showToast(`${target.orderNumber} cancelled & stock released`);
+      logActivity('order', `Cancelled ${target.orderNumber} and released reserved stock.`);
+      showToast(`${target.orderNumber} cancelled & stock returned`);
     } else {
-      showToast(`${target.orderNumber} updated to ${nextStatus}`);
+      logActivity('order', `Marked ${target.orderNumber} as ${nextStatus}.`);
+      showToast(`${target.orderNumber} marked ${nextStatus}`);
     }
   };
 
@@ -208,6 +314,7 @@ export const ErpControlCenter: React.FC = () => {
       createdAt: new Date().toISOString().split('T')[0]
     };
     setOrders((prev) => [created, ...prev]);
+    logActivity('order', `Created ${created.source} order ${created.orderNumber} ($${created.totalAmount.toLocaleString()}) for ${created.companyName}.`);
     showToast(`Created order ${created.orderNumber}`);
   };
 
@@ -228,20 +335,16 @@ export const ErpControlCenter: React.FC = () => {
       createdAt: new Date().toISOString().split('T')[0]
     };
     setPurchaseOrders((prev) => [created, ...prev]);
-    showToast(`Issued ${num} to ${po.supplierName}`);
+    logActivity('procurement', `Issued ${num} ($${po.totalCost.toLocaleString()}) to ${po.supplierName}.`);
+    showToast(`Sent ${num} to ${po.supplierName}`);
   };
 
-  const handleQuickRestockPo = (item: InventoryItem) => {
-    const orderQty = Math.max(10, item.reorderPoint * 2);
-    handleCreatePo({
-      entityId: item.entityId,
-      supplierName: item.supplierName,
-      status: 'ORDERED',
-      expectedEta: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      lines: [{ sku: item.sku, name: item.name, qty: orderQty, unitCost: item.unitCost }],
-      totalCost: orderQty * item.unitCost
-    });
-    setNavTab('procurement');
+  const handleMarkPoInTransit = (poId: string) => {
+    const targetPo = purchaseOrders.find((p) => p.id === poId);
+    if (!targetPo) return;
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === poId ? { ...p, status: 'IN_TRANSIT' } : p)));
+    logActivity('procurement', `${targetPo.poNumber} marked as shipped by ${targetPo.supplierName}.`);
+    showToast(`${targetPo.poNumber} is now On The Way`);
   };
 
   const handleReceivePo = (poId: string) => {
@@ -257,14 +360,28 @@ export const ErpControlCenter: React.FC = () => {
         return line ? { ...item, onHand: item.onHand + line.qty } : item;
       })
     );
+    logActivity('inventory', `Received ${targetPo.poNumber}: added ${targetPo.lines.map((l) => `${l.qty}× ${l.sku}`).join(', ')} to warehouse.`);
     showToast(`Received ${targetPo.poNumber} — warehouse stock updated`);
   };
 
-  const handleMarkInvoicePaid = (invoiceId: string) => {
+  const handleMarkInvoicePaid = (invoiceId: string, method: NonNullable<ErpInvoice['paymentMethod']> = 'Bank Wire') => {
+    const inv = invoices.find((i) => i.id === invoiceId);
     setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'PAID' } : inv))
+      prev.map((item) =>
+        item.id === invoiceId
+          ? {
+              ...item,
+              status: 'PAID',
+              paymentMethod: method,
+              paidDate: new Date().toISOString().split('T')[0]
+            }
+          : item
+      )
     );
-    showToast('Invoice reconciled as PAID');
+    if (inv) {
+      logActivity('finance', `Recorded ${method} payment of $${inv.amount.toLocaleString()} for ${inv.invoiceNumber}.`);
+    }
+    showToast(`Payment recorded via ${method}`);
   };
 
   const handleResetDemo = () => {
@@ -273,21 +390,23 @@ export const ErpControlCenter: React.FC = () => {
     setInventory(INITIAL_INVENTORY);
     setPurchaseOrders(INITIAL_PURCHASE_ORDERS);
     setInvoices(INITIAL_INVOICES);
+    setActivities(INITIAL_ACTIVITIES);
     setSelectedOrder(null);
-    showToast('ERP demo ledger reset to baseline');
+    showToast('Demo data reset to starting state');
   };
 
-  const navItems: { id: ErpNavTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'overview', label: 'Executive Overview', icon: <LayoutDashboard size={16} /> },
-    { id: 'orders', label: 'Sales & Web Orders', icon: <ShoppingCart size={16} /> },
-    { id: 'inventory', label: 'Warehouse Inventory', icon: <Package size={16} /> },
-    { id: 'procurement', label: 'Procurement & POs', icon: <Truck size={16} /> },
-    { id: 'finance', label: 'Invoices & Finance', icon: <FileText size={16} /> }
+  const navItems: { id: ErpNavTab; label: string; badge?: number; icon: React.ReactNode }[] = [
+    { id: 'overview', label: 'Daily Overview', icon: <LayoutDashboard size={16} /> },
+    { id: 'orders', label: 'Orders & Shipping', badge: scopedOrders.filter((o) => o.status === 'PENDING' || o.status === 'ALLOCATED').length, icon: <ShoppingCart size={16} /> },
+    { id: 'customers', label: 'Customers & Growers', icon: <Users size={16} /> },
+    { id: 'inventory', label: 'Warehouse Stock', badge: scopedInventory.filter((i) => i.onHand - i.reserved <= i.reorderPoint).length, icon: <Package size={16} /> },
+    { id: 'procurement', label: 'Supplier Orders (PO)', icon: <Truck size={16} /> },
+    { id: 'finance', label: 'Invoices & Payments', badge: scopedInvoices.filter((i) => i.status !== 'PAID').length, icon: <FileText size={16} /> }
   ];
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#F8FAFC', color: '#0F172A', display: 'flex' }}>
-      {/* 1. Collapsible Left ERP Sidebar (Exact SCADA Visual System) */}
+      {/* Collapsible Left ERP Sidebar */}
       <aside style={{
         width: isSidebarOpen ? '260px' : '64px',
         backgroundColor: '#0F172A',
@@ -360,10 +479,10 @@ export const ErpControlCenter: React.FC = () => {
           </button>
         </div>
 
-        <div style={{ padding: isSidebarOpen ? '16px 12px' : '16px 8px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+        <div style={{ padding: isSidebarOpen ? '16px 12px' : '16px 8px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
           {isSidebarOpen && (
             <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748B', padding: '0 8px 6px', letterSpacing: '0.05em' }}>
-              ERP MODULES
+              BUSINESS MODULES
             </div>
           )}
           {navItems.map((item) => {
@@ -378,10 +497,9 @@ export const ErpControlCenter: React.FC = () => {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px',
+                  justifyContent: isSidebarOpen ? 'space-between' : 'center',
                   width: '100%',
                   padding: isSidebarOpen ? '9px 12px' : '9px',
-                  justifyContent: isSidebarOpen ? 'flex-start' : 'center',
                   borderRadius: '8px',
                   border: 'none',
                   backgroundColor: isActive ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
@@ -391,8 +509,23 @@ export const ErpControlCenter: React.FC = () => {
                   cursor: 'pointer'
                 }}
               >
-                <div>{item.icon}</div>
-                {isSidebarOpen && <span>{item.label}</span>}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {item.icon}
+                  {isSidebarOpen && <span>{item.label}</span>}
+                </span>
+                {isSidebarOpen && typeof item.badge === 'number' && item.badge > 0 && (
+                  <span style={{
+                    fontSize: '10px',
+                    fontFamily: 'monospace',
+                    fontWeight: 800,
+                    padding: '1px 6px',
+                    borderRadius: '10px',
+                    backgroundColor: isActive ? '#10B981' : '#1E293B',
+                    color: isActive ? '#0F172A' : '#E2E8F0'
+                  }}>
+                    {item.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -409,7 +542,7 @@ export const ErpControlCenter: React.FC = () => {
                 </span>
               </div>
               <div style={{ fontSize: '10px', color: '#64748B', marginBottom: '10px' }}>
-                Decoupled Ledger · Local Persist
+                Changes save automatically on this device
               </div>
               <button
                 type="button"
@@ -431,14 +564,14 @@ export const ErpControlCenter: React.FC = () => {
                 }}
               >
                 <RotateCcw size={12} color="#10B981" />
-                <span>Reset Demo Ledger</span>
+                <span>Reset Demo Data</span>
               </button>
             </div>
           ) : (
             <button
               type="button"
               onClick={handleResetDemo}
-              title="Reset Demo Ledger"
+              title="Reset Demo Data"
               style={{ width: '100%', padding: '8px', backgroundColor: '#1E293B', border: 'none', borderRadius: '6px', color: '#10B981', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
             >
               <RotateCcw size={15} />
@@ -447,9 +580,9 @@ export const ErpControlCenter: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* Main Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflowX: 'hidden' }}>
-        {/* Top Bar */}
+        {/* Top Bar with Search + Interactive Bell Action Center */}
         <header style={{
           backgroundColor: '#FFFFFF',
           borderBottom: '1px solid #E2E8F0',
@@ -468,40 +601,104 @@ export const ErpControlCenter: React.FC = () => {
             alignItems: 'center',
             gap: '8px',
             backgroundColor: '#F1F5F9',
-            padding: '7px 16px',
+            padding: '7px 14px',
             borderRadius: '8px',
             border: '1px solid #E2E8F0',
-            width: '320px'
+            width: '340px'
           }}>
             <Search size={15} color="#94A3B8" />
             <input
               type="text"
-              placeholder="Search order #, SKU, supplier, invoice..."
+              placeholder="Find order, customer, SKU, or invoice..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ border: 'none', background: 'transparent', fontSize: '13px', color: '#0F172A', outline: 'none', width: '100%' }}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+                style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', display: 'flex', padding: 0 }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-            <button
-              type="button"
-              onClick={() => setNavTab('inventory')}
-              title={`${lowStockCount} low-stock SKU alerts`}
-              style={{ position: 'relative', width: '34px', height: '34px', borderRadius: '8px', backgroundColor: '#F1F5F9', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-            >
-              <Bell size={16} color="#475569" />
-              {lowStockCount > 0 && (
-                <div style={{ position: 'absolute', top: '6px', right: '6px', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B', border: '2px solid #FFFFFF' }} />
+            <div ref={alertsDropdownRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                data-testid="erp-bell-btn"
+                onClick={() => setIsAlertsOpen((p) => !p)}
+                title={`${alertItems.length} action reminders`}
+                style={{ position: 'relative', width: '36px', height: '36px', borderRadius: '8px', backgroundColor: isAlertsOpen ? '#0F172A' : '#F1F5F9', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <Bell size={16} color={isAlertsOpen ? '#FFFFFF' : '#475569'} />
+                {alertItems.length > 0 && (
+                  <div style={{ position: 'absolute', top: '5px', right: '5px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#F59E0B', border: '2px solid #FFFFFF' }} />
+                )}
+              </button>
+
+              {isAlertsOpen && (
+                <div
+                  data-testid="erp-alerts-popover"
+                  style={{
+                    position: 'absolute',
+                    top: '44px',
+                    right: 0,
+                    width: '340px',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    boxShadow: '0 16px 32px -8px rgba(15, 23, 42, 0.2)',
+                    zIndex: 90,
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div style={{ padding: '10px 14px', backgroundColor: '#0F172A', color: '#FFFFFF', fontSize: '12px', fontWeight: 800, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Action Center ({alertItems.length})</span>
+                    <span style={{ color: '#94A3B8', fontWeight: 500 }}>Click item to open</span>
+                  </div>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {alertItems.length === 0 ? (
+                      <div style={{ padding: '18px', fontSize: '12px', color: '#64748B', textAlign: 'center' }}>
+                        All caught up — no pending alerts.
+                      </div>
+                    ) : (
+                      alertItems.map((al, i) => (
+                        <button
+                          key={al.id}
+                          type="button"
+                          onClick={al.action}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '10px 14px',
+                            border: 'none',
+                            borderTop: i > 0 ? '1px solid #F1F5F9' : 'none',
+                            backgroundColor: '#FFFFFF',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}>{al.title}</div>
+                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>{al.detail}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
+
             <div style={{ width: '34px', height: '34px', borderRadius: '50%', backgroundColor: '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px', color: '#475569' }}>
               AG
             </div>
           </div>
         </header>
 
-        {/* Entity Switcher Hero Sub-Bar */}
+        {/* Entity Switcher Sub-Bar */}
         <section style={{
           padding: '16px 24px',
           backgroundColor: '#FFFFFF',
@@ -520,7 +717,7 @@ export const ErpControlCenter: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsEntityMenuOpen((p) => !p)}
-                title="Switch Business Entity"
+                title="Switch Operating Region"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -538,7 +735,7 @@ export const ErpControlCenter: React.FC = () => {
               </button>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748B' }}>
-              {currentEntity.region} · Warehouse {currentEntity.warehouseCode} · Currency {currentEntity.currency}
+              {currentEntity.region} · Hub {currentEntity.warehouseCode} · All amounts in {currentEntity.currency}
             </p>
 
             {isEntityMenuOpen && (
@@ -596,7 +793,7 @@ export const ErpControlCenter: React.FC = () => {
               </span>
             )}
             <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 700, padding: '6px 10px', backgroundColor: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '7px', color: '#475569' }}>
-              UNLINKED SANDBOX
+              Standalone Mode (Not Linked Yet)
             </span>
           </div>
         </section>
@@ -610,6 +807,7 @@ export const ErpControlCenter: React.FC = () => {
               inventory={scopedInventory}
               purchaseOrders={scopedPos}
               invoices={scopedInvoices}
+              activities={activities}
               onNavigateTab={setNavTab}
               onInspectOrder={(ord) => {
                 setSelectedOrder(ord);
@@ -622,18 +820,48 @@ export const ErpControlCenter: React.FC = () => {
             <OrdersTab
               orders={scopedOrders}
               inventory={inventory}
+              customers={INITIAL_CUSTOMERS}
+              prefilledCustomer={prefilledCustomer}
+              onClearPrefilledCustomer={() => setPrefilledCustomer(null)}
               selectedOrder={selectedOrder}
               onSelectOrder={setSelectedOrder}
               onAdvanceStatus={handleAdvanceOrderStatus}
               onCreateOrder={handleCreateOrder}
+              onViewLinkedInvoice={(orderNum) => {
+                setSelectedOrder(null);
+                setFocusedInvoiceOrderNum(orderNum);
+                setNavTab('finance');
+              }}
+            />
+          )}
+
+          {navTab === 'customers' && (
+            <CustomersTab
+              customers={scopedCustomers}
+              orders={orders}
+              invoices={invoices}
+              onCreateOrderForCustomer={(cust) => {
+                setPrefilledCustomer(cust);
+                setNavTab('orders');
+              }}
             />
           )}
 
           {navTab === 'inventory' && (
             <InventoryTab
               inventory={scopedInventory}
+              purchaseOrders={purchaseOrders}
               onAdjustStock={handleAdjustStock}
-              onQuickCreatePo={handleQuickRestockPo}
+              onCreateRestockPo={(item, restockQuantity) => {
+                handleCreatePo({
+                  entityId: item.entityId,
+                  supplierName: item.supplierName,
+                  status: 'ORDERED',
+                  expectedEta: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+                  lines: [{ sku: item.sku, name: item.name, qty: restockQuantity, unitCost: item.unitCost }],
+                  totalCost: restockQuantity * item.unitCost
+                });
+              }}
             />
           )}
 
@@ -641,6 +869,7 @@ export const ErpControlCenter: React.FC = () => {
             <ProcurementTab
               purchaseOrders={scopedPos}
               inventory={inventory}
+              onMarkInTransit={handleMarkPoInTransit}
               onReceivePo={handleReceivePo}
               onCreatePo={handleCreatePo}
             />
@@ -649,6 +878,9 @@ export const ErpControlCenter: React.FC = () => {
           {navTab === 'finance' && (
             <FinanceTab
               invoices={scopedInvoices}
+              purchaseOrders={scopedPos}
+              focusedOrderNumber={focusedInvoiceOrderNum}
+              onClearFocusedOrder={() => setFocusedInvoiceOrderNum(null)}
               onMarkPaid={handleMarkInvoicePaid}
             />
           )}
