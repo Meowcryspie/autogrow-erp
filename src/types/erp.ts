@@ -1,0 +1,90 @@
+export type ErpNavTab = 'overview' | 'orders' | 'inventory' | 'procurement' | 'finance';
+
+export type BusinessEntityId = 'ALL' | 'NZ-HQ' | 'MY-OPS';
+
+export interface BusinessEntity {
+  id: BusinessEntityId;
+  name: string;
+  region: string;
+  currency: 'USD' | 'NZD' | 'MYR';
+  warehouseCode: string;
+}
+
+export type OrderSource = 'Web Store' | 'Commercial Quote' | 'Distributor PO';
+export type ErpOrderStatus = 'PENDING' | 'ALLOCATED' | 'DISPATCHED' | 'COMPLETED' | 'CANCELLED';
+
+export interface ErpOrderLine {
+  sku: string;
+  name: string;
+  qty: number;
+  unitPrice: number;
+}
+
+export interface ErpSalesOrder {
+  id: string;
+  orderNumber: string;
+  entityId: Exclude<BusinessEntityId, 'ALL'>;
+  source: OrderSource;
+  customerName: string;
+  companyName: string;
+  customerEmail: string;
+  shippingAddress: string;
+  voltageSpec: '240VAC 50Hz' | '110VAC 60Hz' | '24VAC / Low Voltage';
+  status: ErpOrderStatus;
+  createdAt: string;
+  expectedShipDate: string;
+  lines: ErpOrderLine[];
+  totalAmount: number;
+  notes?: string;
+}
+
+export type InventoryCategory = 'Controllers' | 'Dosing Skids' | 'Sensory Pods' | 'Probes & Spares';
+
+export interface InventoryItem {
+  sku: string;
+  name: string;
+  category: InventoryCategory;
+  entityId: Exclude<BusinessEntityId, 'ALL'>;
+  warehouseBin: string;
+  onHand: number;
+  reserved: number;
+  reorderPoint: number;
+  unitCost: number;
+  unitRetail: number;
+  supplierName: string;
+}
+
+export type PurchaseOrderStatus = 'DRAFT' | 'ORDERED' | 'IN_TRANSIT' | 'RECEIVED';
+
+export interface PurchaseOrderLine {
+  sku: string;
+  name: string;
+  qty: number;
+  unitCost: number;
+}
+
+export interface ErpPurchaseOrder {
+  id: string;
+  poNumber: string;
+  entityId: Exclude<BusinessEntityId, 'ALL'>;
+  supplierName: string;
+  status: PurchaseOrderStatus;
+  createdAt: string;
+  expectedEta: string;
+  lines: PurchaseOrderLine[];
+  totalCost: number;
+}
+
+export type InvoiceStatus = 'UNPAID' | 'PAID' | 'OVERDUE';
+
+export interface ErpInvoice {
+  id: string;
+  invoiceNumber: string;
+  orderNumber: string;
+  entityId: Exclude<BusinessEntityId, 'ALL'>;
+  customerCompany: string;
+  issuedDate: string;
+  dueDate: string;
+  amount: number;
+  status: InvoiceStatus;
+}
